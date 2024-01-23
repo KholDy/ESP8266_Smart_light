@@ -10,37 +10,33 @@
 
 #define LED 2
 #define LED_STATUS 0
-#define LIVING_ROOM "Living room"
-#define BEDROOM "Bedroom"
-#define HALlWAY "Hallway"
-#define KITCHEN "Kitchen"
+#define ID 1
+#define DESCRIPTION "Main light in the living room"
+#define IP "192.168.0.201"
 
 const char* ssid = "KholDy_C80";
 const char* password = "38506062";
 
 ESP8266WebServer server(80);
 
+DynamicJsonDocument light(512);
+
 //---------------------Check state led------------------------------------------------------------------------------
 void getStateLed() {
-  DynamicJsonDocument doc(512);
-
   if(digitalRead(LED_STATUS)) {
-    doc["state"] = "off";
+    light["state"] = "off";
   } else if(!digitalRead(LED_STATUS)) {
-    doc["state"] = "on";
+    light["state"] = "on";
   }
 
   String buf;
-  serializeJson(doc, buf);
+  serializeJson(light, buf);
   server.send(200, F("application/json"), buf);
-  Serial.println(buf);
 }
 
 //-----------------Switch LED post request-------------------------------------------------------------------------
 void switchLed() {
   String postBody = server.arg("plain");
-  Serial.println("Post body: ");
-  Serial.println(postBody);
 
   DynamicJsonDocument doc(512);
   DeserializationError error = deserializeJson(doc, postBody);
@@ -60,25 +56,22 @@ void switchLed() {
         
           if(postObj["action"] == "off") {
             digitalWrite(LED, HIGH);
-            doc["state"] = "off";
+            light["state"] = "off";
           } else if(postObj["action"] == "on") {
             digitalWrite(LED, LOW);
-            doc["state"] = "on";
+            light["state"] = "on";
           }
         
         String buf;
-        serializeJson(doc, buf);
-
+        serializeJson(light, buf);
         server.send(201, F("application/json"), buf);
 
       } else {
-        DynamicJsonDocument doc(512);
-        doc["status"] = "error";
-        doc["message"] = F("No data found, or incorrect!");
+        light["status"] = "error";
+        light["message"] = F("No data found, or incorrect!");
 
         String buf;
-        serializeJson(doc, buf);
-
+        serializeJson(light, buf);
         server.send(400, F("application/json"), buf);
       }
     } 
@@ -114,6 +107,12 @@ void handleNotFound() {
 
 //----------------------------------------------------------------------------------------------------------------
 void setup() {
+  light["id"] = ID;
+  light["description"] = DESCRIPTION;
+  light["ip"] = IP;
+  light["state"] = "";
+  light["action"] = ""; 
+
   pinMode(LED, OUTPUT);
 
   WiFi.mode(WIFI_STA);
