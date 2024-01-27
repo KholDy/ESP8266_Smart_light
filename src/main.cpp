@@ -12,7 +12,6 @@
 #define LED_STATUS 0
 #define ID 1
 #define DESCRIPTION "Main light in the living room"
-#define IP "192.168.0.201"
 
 const char* ssid = "KholDy_C80";
 const char* password = "38506062";
@@ -23,6 +22,8 @@ DynamicJsonDocument light(512);
 
 //---------------------Check state led------------------------------------------------------------------------------
 void getStateLed() {
+  light["ip"] = WiFi.localIP();
+
   if(digitalRead(LED_STATUS)) {
     light["state"] = "off";
   } else if(!digitalRead(LED_STATUS)) {
@@ -36,6 +37,7 @@ void getStateLed() {
 
 //-----------------Switch LED post request-------------------------------------------------------------------------
 void switchLed() {
+  light["ip"] = WiFi.localIP();
   String postBody = server.arg("plain");
 
   DynamicJsonDocument doc(512);
@@ -109,9 +111,9 @@ void handleNotFound() {
 void setup() {
   light["id"] = ID;
   light["description"] = DESCRIPTION;
-  light["ip"] = IP;
-  light["state"] = "";
-  light["action"] = ""; 
+  light["ip"] = "null";
+  light["state"] = "null";
+  light["action"] = "null"; 
 
   pinMode(LED, OUTPUT);
 
