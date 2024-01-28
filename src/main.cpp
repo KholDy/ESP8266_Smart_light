@@ -10,8 +10,11 @@
 
 #define LED 2
 #define LED_STATUS 0
+// #define WELCOME "Welcome to the living room switch!"
+#define WELCOME "Welcome to the bedroom switch!"
 #define ID 1
-#define DESCRIPTION "Main light in the living room"
+// #define DESCRIPTION "Main light in the living room"
+#define DESCRIPTION "Main light in the bedroom"
 
 const char* ssid = "KholDy_C80";
 const char* password = "38506062";
@@ -84,7 +87,7 @@ void switchLed() {
 void restServerRouting() {
   server.on("/", HTTP_GET, []() {
     server.send(200, F("text/html"),
-      F("Welcome to the kitchen switch!"));
+      F(WELCOME));
   });
   // handle post request
   server.on(F("/ledState"), HTTP_GET, getStateLed);
