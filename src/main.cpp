@@ -1,49 +1,95 @@
-#include <WiFiManager.h>
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
+
 #include <ArduinoJson.h>
 
-#define LED D1
-#define LED_STATUS D2
+#include <DNSServer.h>
+#include <ElegantOTA.h>
 
-//#define HOTSPOT_NAME "The living room switch!"
-#define HOTSPOT_NAME "The bedroom switch"
-#define WELCOME "Welcome to the living room switch!\n"\
-                "To get state switch light send GET HTTP request: ip/ledState\n"\
-                "To turn on/off ligh send POST HTTP request: ip/led"
-//#define WELCOME "Welcome to the bedroom switch!\n"\
-                "To get state switch light send GET HTTP request: ip/ledState\n"\
-                "To turn on/off ligh send POST HTTP request: ip/led"
-#define ID 2
-#define DESCRIPTION "Main light in the living room"
-// #define DESCRIPTION "Main light in the bedroom"
+#include <WiFiManager.h>
+
+#define LED 2
+#define LED_STATUS 0
+#define RELAY 5
+
+#define LIVING_ROOM "Living room"
+#define BEDROOM "Bedroom"
+#define HALlWAY "Hallway"
+#define KITCHEN "Kitchen"
 
 ESP8266WebServer server(80);
 
-DynamicJsonDocument light(512);
+const char * welcomePage = "<!DOCTYPE html>"
+                        "<html>"
+                          "<head>"
+                            "<title>Welcome in smart light</title>"
+                            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+                            "<link rel=\"icon\" href=\"data:,\">"
+                            "<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;" 
+                            " p,li {font: 1rem 'Fira Sans', sans-serif;} p { font-weight: bold;}} </style>"
+                          "</head>"
+                          "<body>"
+                            "<h2>ESP8266 SMART LIGHT</h2>"
+                              "<div class=\"content\">"
+                                "<div class=\"card-grid\">"
+                                  "<div class=\"card\">"
+                                    "<div>"
+                                      "<p>Welcome to the kitchen switch!</p>"
+                                      "<div style=\"display: flex; justify-content: center; text-align: left; height: 100px;\">"
+                                        "<ul>"
+                                          "<li>To update the firmware, use the GET method with endpoint ip-device/udate</li>"
+                                          "<li>To view information about the esp, use the GET method with endpoint ip-device/info</li>"
+                                          "<li>To get the state of light, use the GET method with endpoint ip-device/ledState</li>"
+                                          "<li>To the switch of light, use the PUT method with endpoint ip-device/led</li>"
+                                        "</ul>"
+                                      "</div>"
+                                    "</div>"
+                                  "</div>"
+                                "</div>"
+                              "</div>"
+                          "</body>"
+                        "</html>";
 
-//---------------------Check state led------------------------------------------------------------------------------
+// Check state led
 void getStateLed() {
-  light["ip"] = WiFi.localIP();
+  DynamicJsonDocument doc(512);
 
   if(digitalRead(LED_STATUS)) {
-    light["state"] = "off";
+    doc["state"] = "off";
   } else if(!digitalRead(LED_STATUS)) {
-    light["state"] = "on";
+    doc["state"] = "on";
   }
-
+  
   String buf;
-  serializeJson(light, buf);
+  serializeJson(doc, buf);
   server.send(200, F("application/json"), buf);
 }
 
-//-----------------Switch LED post request-------------------------------------------------------------------------
+void getInfo() {
+      DynamicJsonDocument doc(512);
+ 
+      doc["ip"] = WiFi.localIP().toString();
+      doc["gw"] = WiFi.gatewayIP().toString();
+      doc["nm"] = WiFi.subnetMask().toString();
+      doc["signalStrengh"] = WiFi.RSSI();
+      doc["chipId"] = ESP.getChipId();
+      doc["flashChipId"] = ESP.getFlashChipId();
+      doc["flashChipSize"] = ESP.getFlashChipSize();
+      doc["flashChipRealSize"] = ESP.getFlashChipRealSize();
+      doc["freeHeap"] = ESP.getFreeHeap();
+      
+      String buf;
+      serializeJson(doc, buf);
+      server.send(200, F("application/json"), buf);
+}
+
+//Switch LED post request
 void switchLed() {
-  light["ip"] = WiFi.localIP();
   String postBody = server.arg("plain");
+  Serial.println(postBody);
 
   DynamicJsonDocument doc(512);
   DeserializationError error = deserializeJson(doc, postBody);
@@ -54,46 +100,55 @@ void switchLed() {
 
     String msg = error.c_str();
 
-    server.send(400, F("text/html"), "Error in parsing json body!" + msg);
+    server.send(400, F("text/html"), "Error in parsin json body! <br>" + msg);
   } else {
     JsonObject postObj = doc.as<JsonObject>();
 
-    if (server.method() == HTTP_POST) {
-      if (postObj.containsKey("description") && postObj.containsKey("id")) {
+    if (server.method() == HTTP_PUT) {
+      if (postObj.containsKey("name") && postObj.containsKey("id")) {
         
           if(postObj["action"] == "off") {
             digitalWrite(LED, HIGH);
-            light["state"] = "off";
+            digitalWrite(RELAY, HIGH);
+            /*
+             * Поставить перемычку 0-5 для контроля срабатывания реле
+             * и написать проверку срабатывания по пину 0
+             */
+            doc["state"] = "off";
           } else if(postObj["action"] == "on") {
             digitalWrite(LED, LOW);
-            light["state"] = "on";
+            digitalWrite(RELAY, LOW);
+            doc["state"] = "on";
           }
         
         String buf;
-        serializeJson(light, buf);
+        serializeJson(doc, buf);
+
         server.send(201, F("application/json"), buf);
 
-      } else {
-        light["status"] = "error";
-        light["message"] = F("No data found, or incorrect!");
+      }else {
+        DynamicJsonDocument doc(512);
+        doc["status"] = "KO";
+        doc["message"] = F("No data found, or incorrect!");
 
         String buf;
-        serializeJson(light, buf);
+        serializeJson(doc, buf);
+
         server.send(400, F("application/json"), buf);
       }
     } 
   }
 }
-
-//-----------------------------------------Define routing----------------------------------------------------------
+ 
+// Define routing
 void restServerRouting() {
   server.on("/", HTTP_GET, []() {
-    server.send(200, F("text/html"),
-      F(WELCOME));
-  });
-  // handle post request
+      server.send(200, F("text/html"),
+          welcomePage);
+  }); 
+  server.on(F("/info"), HTTP_GET, getInfo);
   server.on(F("/ledState"), HTTP_GET, getStateLed);
-  server.on(F("/led"), HTTP_POST, switchLed);
+  server.on(F("/led"), HTTP_PUT, switchLed);
 }
 
 // Manage not found URL
@@ -112,18 +167,12 @@ void handleNotFound() {
   server.send(404, "text/plain", message);
 }
 
-//----------------------------------------------------------------------------------------------------------------
 void setup() {
-  light["id"] = ID;
-  light["description"] = DESCRIPTION;
-  light["ip"] = "null";
-  light["state"] = "null";
-  light["action"] = "null"; 
+    Serial.begin(9600);
+    pinMode(LED, OUTPUT);
+    pinMode(RELAY, OUTPUT);
 
-  pinMode(LED, OUTPUT);
-  pinMode(LED_STATUS, INPUT);
-
-  WiFi.mode(WIFI_STA);
+    WiFi.mode(WIFI_STA);
 
     //WiFiManager, Local intialization. Once its business is done, there is no need to keep it around
     WiFiManager wm;
@@ -140,7 +189,7 @@ void setup() {
     bool res;
     //res = wm.autoConnect(); // auto generated AP name from chipid
     //res = wm.autoConnect("Kitchen-light"); // anonymous ap
-    res = wm.autoConnect(HOTSPOT_NAME,"password"); // password protected ap
+    res = wm.autoConnect("Kitchen-light","password"); // password protected ap
 
     if(!res) {
         Serial.println("Failed to connect");
@@ -156,10 +205,10 @@ void setup() {
     // Set not found response
     server.onNotFound(handleNotFound);
     // Start server
+    ElegantOTA.begin(&server);
     server.begin();
 }
 
-//----------------------------------------------------------------------------------------------------------------
 void loop() {
-  server.handleClient();
+    server.handleClient();
 }
