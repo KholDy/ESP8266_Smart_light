@@ -16,20 +16,9 @@
 
 //#define HOTSPOT_NAME "The living room switch!"
 #define HOTSPOT_NAME "The bedroom switch"
-#define WELCOME "Welcome to the living room switch!\n"\
-                "To get state switch light send GET HTTP request: ip/ledState\n"\
-                "To turn on/off ligh send POST HTTP request: ip/led"
-//#define WELCOME "Welcome to the bedroom switch!\n"\
-                "To get state switch light send GET HTTP request: ip/ledState\n"\
-                "To turn on/off ligh send POST HTTP request: ip/led"
-#define ID 2
-#define DESCRIPTION "Main light in the living room"
-// #define DESCRIPTION "Main light in the bedroom"
 
-#define LIVING_ROOM "Living room"
-#define BEDROOM "Bedroom"
-#define HALlWAY "Hallway"
-#define KITCHEN "Kitchen"
+#define DEFAULT_ID -1
+#define DEFAULT_DESCRIPTION "Set a description switch light."
 
 ESP8266WebServer server(80);
 
@@ -56,6 +45,8 @@ const char * welcomePage =  "<!DOCTYPE html>"
                                               "<li>To view information about the esp, use the GET method with endpoint ip-device/info</li>"
                                               "<li>To get the state of light, use the GET method with endpoint ip-device/ledState</li>"
                                               "<li>To the switch of light, use the PUT method with endpoint ip-device/led</li>"
+                                              "<li>To set ID, use the POST method and JSON row {\"id\": \"ID your device\"} with endpoint ip-device/setId</li>"
+                                              "<li>To set DESCRIPTION, use the POST method and JSON row {\"description\": \"DESCRIPTION your device\"} with endpoint ip-device/setDescription</li>"
                                             "</ul>"
                                           "</div>"
                                         "</div>"
@@ -67,8 +58,6 @@ const char * welcomePage =  "<!DOCTYPE html>"
 
 // Check state led
 void getStateLed() {
-  light["ip"] = WiFi.localIP();
-
   if(digitalRead(LED_STATUS)) {
     light["state"] = "off";
   } else if(!digitalRead(LED_STATUS)) {
@@ -80,6 +69,7 @@ void getStateLed() {
   server.send(200, F("application/json"), buf);
 }
 
+// Check info about chip
 void getInfo() {
       DynamicJsonDocument doc(512);
  
@@ -98,9 +88,77 @@ void getInfo() {
       server.send(200, F("application/json"), buf);
 }
 
+// Set id switch led
+void setId() {
+  light["ip"] = WiFi.localIP();
+
+  String postBody = server.arg("plain");
+  DynamicJsonDocument doc(512);
+  DeserializationError error = deserializeJson(doc, postBody);
+
+  if(error) {
+    String msg = error.c_str();
+    server.send(400, F("text/html"), "Error in parsing json body!" + msg);
+  } else {
+    JsonObject postObj = doc.as<JsonObject>();
+
+    if (server.method() == HTTP_POST) {
+      if (postObj.containsKey("id")) {
+        light["id"] = postObj["id"];
+
+        String buf;
+        serializeJson(light, buf);
+        server.send(201, F("application/json"), buf);
+      } else {
+        light["status"] = "error";
+        light["message"] = F("No data found, or incorrect!");
+
+        String buf;
+        serializeJson(light, buf);
+        server.send(400, F("application/json"), buf);
+      }
+    }
+  }
+
+}
+
+// Set description switch led
+void setDescription() {
+  light["ip"] = WiFi.localIP();
+
+  String postBody = server.arg("plain");
+  DynamicJsonDocument doc(512);
+  DeserializationError error = deserializeJson(doc, postBody);
+
+  if(error) {
+    String msg = error.c_str();
+    server.send(400, F("text/html"), "Error in parsing json body!" + msg);
+  } else {
+    JsonObject postObj = doc.as<JsonObject>();
+
+    if (server.method() == HTTP_POST) {
+      if (postObj.containsKey("description")) {
+        light["description"] = postObj["description"];
+
+        String buf;
+        serializeJson(light, buf);
+        server.send(201, F("application/json"), buf);
+      } else {
+        light["status"] = "error";
+        light["message"] = F("No data found, or incorrect!");
+
+        String buf;
+        serializeJson(light, buf);
+        server.send(400, F("application/json"), buf);
+      }
+    }
+  }
+}
+
 //-----------------Switch LED post request-------------------------------------------------------------------------
 void switchLed() {
   light["ip"] = WiFi.localIP();
+
   String postBody = server.arg("plain");
   DynamicJsonDocument doc(512);
   DeserializationError error = deserializeJson(doc, postBody);
@@ -147,6 +205,8 @@ void restServerRouting() {
           welcomePage);
   }); 
   server.on(F("/info"), HTTP_GET, getInfo);
+  server.on(F("/setId"), HTTP_POST, setId);
+  server.on(F("/setDescription"), HTTP_POST, setDescription);
   server.on(F("/ledState"), HTTP_GET, getStateLed);
   server.on(F("/led"), HTTP_POST, switchLed);
 }
@@ -168,8 +228,8 @@ void handleNotFound() {
 }
 
 void setup() {
-    light["id"] = ID;
-    light["description"] = DESCRIPTION;
+    light["id"] = DEFAULT_ID;
+    light["description"] = DEFAULT_DESCRIPTION;
     light["ip"] = "null";
     light["state"] = "null";
     light["action"] = "null";
